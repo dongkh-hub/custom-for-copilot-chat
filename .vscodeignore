@@ -1,0 +1,15 @@
+.vscode/**
+src/**
+scripts/**
+node_modules/**
+out/**/*.map
+.gitignore
+tsconfig.json
+**/*.ts
+.workbuddy/**
+AIINDEX.md
+**/*.vsix
+.github/**
+.releaserc.json
+.commitlintrc.json
+CHANGELOG.md

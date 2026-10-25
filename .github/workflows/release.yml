@@ -1,0 +1,111 @@
+name: Release (semantic-release)
+
+# 发布通道（参考 bCloud-Copilot-Tools 的 release.yml；本项目主开发分支是 master）：
+#
+#   发版动作 = 把 master 合进 release（GitHub 网页开 PR，合并即可）。
+#   每次 push release 分支，本 workflow 自动完成：
+#     分析 commit → 推断版本（fix→patch / feat→minor / BREAKING→major）
+#     → 更新 package.json/package-lock + CHANGELOG.md → commit + 打 v<version> tag
+#     → vsce publish（Azure WIF 无密钥）→ 创建 GitHub Release（附 vsix）。
+#
+# 依赖 commit 规范（conventional commits，.commitlintrc.json 守门）。
+# 首次启用前必须先打基线 tag：git tag v0.1.0 && git push origin v0.1.0
+# （否则 semantic-release 会从 1.0.0 开始累计推断版本）。
+#
+# 前置 GitHub/Azure 配置（一次性）：
+#   1. Entra ID 建应用注册 + 托管标识，把该身份加入 Marketplace 发布者成员；
+#   2. 在应用上为本仓库（dongkh-hub/custom-for-copilot-chat）配置 federated credential；
+#   3. 仓库 Settings 配置 AZURE_CLIENT_ID / AZURE_TENANT_ID（Variables 或 Secrets）。
+on:
+  push:
+    branches: [release]
+  workflow_dispatch:
+
+permissions:
+  contents: write # semantic-release 推 commit/tag + 建 Release
+  id-token: write # OIDC：换取 Entra ID 托管标识（vsce publish）
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    env:
+      # 客户端 ID / 租户 ID 是标识符而非密钥，建在 Variables 或 Secrets 任一处都能取到
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID || vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID || vars.AZURE_TENANT_ID }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # semantic-release 需要完整历史推算自上次 tag 的版本
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint commit messages (workflow_dispatch 兜底)
+        # push 触发的 commit 已由 PR 校验把关；手动触发时再校验最近提交
+        if: github.event_name == 'workflow_dispatch'
+        run: npx --no -- commitlint --from "$(git rev-list --max-parents=0 HEAD)" --to HEAD || true
+
+      - name: Azure login (WIF / 托管标识)
+        # 用 GitHub OIDC 令牌换托管标识身份；该身份没有 Azure 订阅，故 allow-no-subscriptions
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          allow-no-subscriptions: true
+
+      - name: Verify marketplace identity
+        # 确认登录身份能在 VSSPS 解析出成员 id；未加入发布者成员时会在这里就暴露，而不是等 403
+        run: |
+          ID=$(az rest \
+            -u https://app.vssps.visualstudio.com/_apis/profile/profiles/me \
+            --resource 499b84ac-1321-427f-aa17-267ca6975798 \
+            --query id -o tsv)
+          echo "Marketplace identity: $ID"
+          if [ -z "$ID" ]; then
+            echo "::error::No marketplace identity resolved - check the federated credential subject."
+            exit 1
+          fi
+
+      - name: Run semantic-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # .releaserc.json 定义全流程：
+        #   prepare: 写 CHANGELOG.md → bump package.json（npmPublish:false）
+        #            → compile + i18n:check + vsce package → @semantic-release/git 提交 + 打 tag
+        #   publish: vsce publish --azure-credential → GitHub Release（附 vsix）
+        run: npx semantic-release
+
+  # 把三个版本文件（package.json / package-lock.json / CHANGELOG.md）
+  # 从 release 回填到 master，让 master 版本号自动对齐（版本权威在 tag）。
+  # 对齐逻辑在 scripts/sync-release-version.js。
+  #
+  # 刻意用 always()：版本 commit 由 semantic-release 在 prepare 阶段就已推到 release，
+  # 后面的 vsce publish 再失败也不应该连带吞掉对齐。没发新版时脚本自身是 no-op。
+  sync-version-to-master:
+    name: 同步版本号回 master
+    runs-on: ubuntu-latest
+    needs: [release]
+    if: always() && !cancelled() && github.ref == 'refs/heads/release'
+    permissions:
+      contents: write # push master 需要写权限
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: 同步版本文件到 master 并推送
+        run: node scripts/sync-release-version.js

@@ -1,0 +1,10 @@
+{
+  "extension.description": "免 Copilot 登录，在 Copilot Chat / Agents 里使用任意 OpenAI 兼容模型** —— 自己填地址和 Key。",
+  "command.category": "自定义模式",
+  "config.title": "自定义模式",
+  "provider.displayName": "自定义模式",
+  "cmd.configureAgentWindowTools.title": "配置 Agents 窗口工具（工具可见性）",
+  "cmd.manageModels.title": "管理模型…",
+  "config.modelList.description": "本机已配置模型组的只读镜像（每行一组）。统一管理入口：[管理模型](command:customModel.manageModels)。真正的清单在本机凭据存储里，改这个值不生效。",
+  "cmd.resetCapabilities.title": "重置已学习的思考强度限制"
+}

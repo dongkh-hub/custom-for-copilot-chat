@@ -1,0 +1,89 @@
+{
+  "name": "custom-for-copilot-chat",
+  "displayName": "Custom for Copilot Chat",
+  "description": "%extension.description%",
+  "version": "0.1.0",
+  "publisher": "bCloudCopilotTools",
+  "license": "MIT",
+  "icon": "icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dongkh-hub/custom-for-copilot-chat"
+  },
+  "engines": {
+    "vscode": "^1.109.0"
+  },
+  "categories": [
+    "Chat",
+    "Programming Languages"
+  ],
+  "galleryBanner": {
+    "color": "#183243",
+    "theme": "dark"
+  },
+  "main": "./out/extension.js",
+  "l10n": "./l10n",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "customModel.manageModels",
+        "title": "%cmd.manageModels.title%",
+        "category": "%command.category%"
+      },
+      {
+        "command": "customModel.configureAgentWindowTools",
+        "title": "%cmd.configureAgentWindowTools.title%",
+        "category": "%command.category%"
+      },
+      {
+        "command": "customModel.resetCapabilities",
+        "title": "%cmd.resetCapabilities.title%",
+        "category": "%command.category%"
+      }
+    ],
+    "configuration": {
+      "title": "%config.title%",
+      "properties": {
+        "customModel.modelList": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "editPresentation": "multilineText",
+          "markdownDescription": "%config.modelList.description%"
+        }
+      }
+    },
+    "languageModelChatProviders": [
+      {
+        "vendor": "custommodel",
+        "displayName": "%provider.displayName%"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "i18n:check": "node scripts/i18n-check.js",
+    "verify": "npm run compile && npm run i18n:check && node scripts/smoke.js && node scripts/capability-e2e.js",
+    "vscode:prepublish": "npm run compile",
+    "package": "vsce package --skip-license",
+    "sync:release-version": "node scripts/sync-release-version.js",
+    "e2e": "node scripts/capability-e2e.js"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^21.2.3",
+    "@commitlint/config-conventional": "^21.2.3",
+    "@semantic-release/changelog": "^7.0.0",
+    "@semantic-release/exec": "^7.1.0",
+    "@semantic-release/git": "^11.0.1",
+    "@semantic-release/github": "^12.0.10",
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.99.0",
+    "@vscode/vsce": "^4.0.0",
+    "semantic-release": "^25.0.9",
+    "typescript": "^5.4.0"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "branches": ["release"],
+  "plugins": [
+    "@semantic-release/commit-analyzer",
+    "@semantic-release/release-notes-generator",
+    [
+      "@semantic-release/changelog",
+      { "changelogFile": "CHANGELOG.md" }
+    ],
+    [
+      "@semantic-release/npm",
+      { "npmPublish": false }
+    ],
+    [
+      "@semantic-release/exec",
+      {
+        "prepareCmd": "npm run compile && npm run i18n:check && npx @vscode/vsce package --skip-license -o custom-for-copilot-chat.vsix",
+        "publishCmd": "npx @vscode/vsce publish --azure-credential --skip-license --packagePath custom-for-copilot-chat.vsix"
+      }
+    ],
+    [
+      "@semantic-release/git",
+      {
+        "assets": ["package.json", "package-lock.json", "CHANGELOG.md"],
+        "message": "chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
+      }
+    ],
+    "@semantic-release/github"
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "type": "npm",
+      "script": "watch",
+      "problemMatcher": "$tsc-watch",
+      "isBackground": true,
+      "presentation": {
+        "reveal": "never"
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    },
+    {
+      "type": "npm",
+      "script": "compile",
+      "group": "build",
+      "problemMatcher": "$tsc"
+    },
+    {
+      // F5 development flow tail: package (readable JS — this project has no
+      // obfuscation step), then install the fresh VSIX into THIS VS Code.
+      //
+      // One bash script (scripts/dev-install.sh) does both: it locates the
+      // `code` CLI (PATH, then the standard macOS app-bundle path) and
+      // reinstalls with --force so same-version iterations succeed.
+      //
+      // After the task finishes, RELOAD the window for the new build to run
+      // (VS Code does not hot-swap an installed extension's files). The task
+      // ends with the reload hint in its output.
+      "label": "dev: package + install",
+      "type": "shell",
+      "command": "bash",
+      "args": ["${workspaceFolder}/scripts/dev-install.sh"],
+      "group": "build",
+      "problemMatcher": []
+    }
+  ]
+}

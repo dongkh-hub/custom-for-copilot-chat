@@ -1,0 +1,10 @@
+{
+  "extension.description": "No GitHub sign-in. BYOK models for Copilot Chat & Agent Mode — just an OpenAI-compatible URL and key.",
+  "command.category": "Custom Mode",
+  "config.title": "Custom Mode",
+  "provider.displayName": "Custom Mode",
+  "cmd.configureAgentWindowTools.title": "Configure Agents Window Tools (tool visibility)",
+  "cmd.manageModels.title": "Manage Models…",
+  "config.modelList.description": "Read-only mirror of the model groups on this machine (one per line). Manage them in one place: [Manage models](command:customModel.manageModels). The real list lives in this machine's credential store — editing this value does nothing.",
+  "cmd.resetCapabilities.title": "Reset learned thinking-effort limits"
+}
