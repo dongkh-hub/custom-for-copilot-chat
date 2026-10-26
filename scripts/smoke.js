@@ -91,6 +91,7 @@ const {
   CONTEXT_WINDOW_TIERS,
   contextTierOptions,
   defaultContextTier,
+  hostWindowLabel,
   realInputCeiling,
   summaryInputTokens,
   summaryWindowLabel,
@@ -351,8 +352,32 @@ streamSseToProgress(sseResponse(events).body, { report: (p) => reported.push(p) 
     LADDER,
     'every model offers the same ladder'
   );
-  assert.strictEqual(rungs[0].label, '64K', '64K is the floor');
-  assert.strictEqual(rungs[rungs.length - 1].label, '1M', '1M reads as 1M, not 1024K');
+  // LABELS state the number the CONTEXT RING will show, not the rung: the host
+  // sizes the ring from `rung + maxOutputTokens` and abbreviates in base 1000.
+  // Printing the raw rung is what made「选 256K」read「393K」on screen.
+  const OUTPUT = 131072;
+  const labelled = contextTierOptions(1048576, OUTPUT);
+  assert.deepStrictEqual(
+    labelled.map((tier) => tier.label),
+    LADDER.map((rung) => hostWindowLabel(rung + OUTPUT)),
+    'every label is the ring total for THIS output ceiling'
+  );
+  assert.strictEqual(
+    labelled.find((tier) => tier.tokens === 262144).label,
+    '393K',
+    'the 256K rung reads 393K under a 128K answer reserve'
+  );
+  assert.strictEqual(
+    contextTierOptions(1048576, 0).find((tier) => tier.tokens === 262144).label,
+    '262K',
+    'without a reserve the label is the rung abbreviated in base 1000'
+  );
+  // The host formatter itself (base 1000, truncating M, >900_000 collapse).
+  assert.strictEqual(hostWindowLabel(393216), '393K');
+  assert.strictEqual(hostWindowLabel(1179648), '1.1M');
+  assert.strictEqual(hostWindowLabel(1048576), '1M', '1.048M truncates to 1M, not 1.0M');
+  assert.strictEqual(hostWindowLabel(1025536), '1M');
+  assert.strictEqual(hostWindowLabel(0), '0');
   assert.deepStrictEqual(
     contextTierOptions(131072).map((tier) => tier.tokens),
     LADDER,

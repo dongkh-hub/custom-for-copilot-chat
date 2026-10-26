@@ -379,8 +379,11 @@ export async function writeProfileApiKey(
 /**
  * Rough token figure for a label: 96000 → `94K`, 65536 → `64K`,
  * 1048576 → `1M`. The M step matters — "1024K" is not what anyone picks a
- * window by, and the gear panel's own ladder label has to match the summary
- * lines that show the same number.
+ * window by, and the summary lines that print an output ceiling use this.
+ *
+ * NOT the context-window dropdown's label any more: that one has to match the
+ * number the host prints on the context ring, which is a base-1000 total (see
+ * {@link hostWindowLabel} and {@link contextTierOptions}).
  */
 export function tokenWindowLabel(tokens: number): string {
   return tokens >= 1048576 ? `${Math.round(tokens / 1048576)}M` : `${Math.round(tokens / 1024)}K`;
@@ -397,6 +400,35 @@ export function tokenWindowLabel(tokens: number): string {
  */
 export function summaryWindowLabel(tokens: number): string {
   return tokens >= 1000000 ? `${Math.round(tokens / 1000000)}M` : `${Math.round(tokens / 1000)}K`;
+}
+
+/**
+ * The label VS CODE ITSELF would print for a token count — a replica of the
+ * workbench's abbreviation helper (`$E` in `workbench.desktop.main.js`), which
+ * is BASE 1000 and truncates in the M range:
+ *
+ *   393216 → `393K` · 1179648 → `1.1M` · 1048576 → `1M` · 1025536 → `1M`
+ *   (the M range truncates to one decimal, so 1.048 collapses to `1M`, and
+ *   anything over 900_000 that is not yet 1M also reads `1M`)
+ *
+ * This exists because the gear panel's context-window dropdown and the chat's
+ * context ring are the two places a user compares numbers, and only this
+ * labelling makes them agree. The ring's denominator is NOT the rung: the host
+ * computes `(contextSize ?? maxInputTokens) + maxOutputTokens` — the prompt
+ * budget PLUS the answer reserve — and prints it through the formatter above.
+ * A rung labelled `256K` (binary, 262144) under a 128K output ceiling therefore
+ * showed「393K」on the ring, i.e. the number the user picked was nowhere on
+ * screen. See `contextTierOptions`, which labels every rung with THIS figure.
+ */
+export function hostWindowLabel(tokens: number): string {
+  if (tokens >= 1000000) {
+    const millions = Math.floor((tokens / 1000000) * 10) / 10;
+    return millions % 1 === 0 ? `${millions.toFixed(0)}M` : `${millions.toFixed(1)}M`;
+  }
+  if (tokens > 900000) {
+    return '1M';
+  }
+  return tokens >= 1000 ? `${Math.round(tokens / 1000)}K` : String(tokens);
 }
 
 /**
@@ -439,14 +471,27 @@ const TIER_FIT_SLACK = 8192;
  * own enum leaves the host with an empty dropdown. It is slotted in by VALUE
  * (the ladder is ascending), not appended — a hand-set 700K between two rungs
  * must not read as "bigger than 1M".
+ *
+ * LABELS are the number the context ring will show, not the rung itself: the
+ * host sizes the ring from `budget + maxOutputTokens` and abbreviates in base
+ * 1000 (see {@link hostWindowLabel}). Printing the raw rung made「选 256K」
+ * read「393K」on the ring for a 128K-output model, so `maxOutputTokens` is
+ * required input here — pass the SAME output ceiling the entry declares.
+ * Omit it only where no ring is involved (there is no such caller today).
  */
-export function contextTierOptions(current?: number): readonly { tokens: number; label: string }[] {
+export function contextTierOptions(
+  current?: number,
+  maxOutputTokens = 0
+): readonly { tokens: number; label: string }[] {
   const tokens = CONTEXT_WINDOW_TIERS.filter((tier) => tier !== current);
   if (current !== undefined && current > 0) {
     tokens.push(current);
     tokens.sort((left, right) => left - right);
   }
-  return tokens.map((value) => ({ tokens: value, label: tokenWindowLabel(value) }));
+  return tokens.map((value) => ({
+    tokens: value,
+    label: hostWindowLabel(value + maxOutputTokens),
+  }));
 }
 
 /**

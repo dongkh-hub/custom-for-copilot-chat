@@ -213,17 +213,25 @@ function modelConfigurationSchema(entry: ModelEntry, profile: Profile): unknown 
  * model collapsed on the first pick, and one derived from the effective value
  * could never offer anything above it.
  *
+ * LABELS state the window Copilot will REPORT, not the rung: the host's ring
+ * denominator is `contextSize + maxOutputTokens` printed in base 1000, so the
+ * rung is passed together with this entry's output ceiling and
+ * `contextTierOptions` labels each rung with that total. Without it the user
+ * picked「256K」and saw「393K」on the ring, with the chosen number nowhere on
+ * screen (this extension's ceilings differ per profile, unlike a single-model
+ * provider's, so the labels — not the rung values — are what get derived).
+ *
  * `default` is the CURRENTLY effective ceiling (see resolveProfileEntry), so
  * "nothing stored" reads as "the declared window" — the host deletes a stored
  * value that equals the default, and an absent value must never mean zero.
  */
 function contextWindowProperty(entry: ModelEntry): unknown {
-  const tiers = contextTierOptions(entry.maxInputTokens);
+  const tiers = contextTierOptions(entry.maxInputTokens, entry.maxOutputTokens);
   return {
     type: 'integer',
     title: vscode.l10n.t('Context window'),
     description: vscode.l10n.t(
-      'Prompt budget Copilot sizes the conversation against. Smaller budgets make it compact the history earlier; the model itself is unchanged.'
+      'The window Copilot reports on the context ring — prompt budget plus the answer reserve. Smaller choices make it compact the history earlier; the model itself is unchanged.'
     ),
     enum: tiers.map((tier) => tier.tokens),
     enumItemLabels: tiers.map((tier) => tier.label),

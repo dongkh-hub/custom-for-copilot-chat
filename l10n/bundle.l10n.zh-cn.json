@@ -1,6 +1,6 @@
 {
   "Context window": "上下文窗口",
-  "Prompt budget Copilot sizes the conversation against. Smaller budgets make it compact the history earlier; the model itself is unchanged.": "Copilot 按这个预算来组装对话。选小一些会让它更早压缩历史；模型本身没有变化。",
+  "The window Copilot reports on the context ring — prompt budget plus the answer reserve. Smaller choices make it compact the history earlier; the model itself is unchanged.": "Copilot 在上下文环上显示的就是这个窗口（对话预算 + 回答预留）。选小一些会让它更早压缩历史；模型本身没有变化。",
   "Custom for Copilot Chat: tool activation did not complete after {0} rounds.": "Custom for Copilot Chat：工具激活在 {0} 轮后仍未完成。",
   "GitHub Copilot Chat is not enabled — the custom model picker lives there. Enable it first.": "GitHub Copilot Chat 未启用 — 模型选择器在其中，请先启用。",
   "GitHub Copilot Chat is not enabled — the custom model picker lives there.": "GitHub Copilot Chat 未启用 — 自定义模型的模型选择器位于其中。",
