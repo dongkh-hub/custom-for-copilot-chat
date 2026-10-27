@@ -184,11 +184,29 @@ const server = http.createServer((req, res) => {
   assert.ok(/"high"/.test(schema.enumDescriptions[mediumIndex]), 'description names the substitute');
   console.log('PASS 3 — panel note:', schema.enumDescriptions[mediumIndex]);
 
-  // 4) A value the enumeration rejected is also skipped without a round-trip.
+  // 3b) BOTH harnesses must read the SAME positions. VS Code's picker renders
+  //     `configurationSchema`; Copilot ignores it and rebuilds the dropdown from
+  //     `supportsReasoningEffort` / `defaultReasoningEffort`, labelling only the
+  //     words it knows. A window control is absent because only one of the two
+  //     harnesses renders the `tokens` group.
+  const positions = ['none', 'low', 'medium', 'high'];
+  assert.deepStrictEqual([...schema.enum], positions, `schema enum: ${schema.enum}`);
+  assert.strictEqual(schema.default, 'none', 'the default is the no-parameter position');
+  assert.deepStrictEqual([...infos[0].supportsReasoningEffort], positions, 'Copilot gets the same four');
+  assert.strictEqual(infos[0].defaultReasoningEffort, 'none');
+  assert.strictEqual(
+    infos[0].configurationSchema.properties.contextSize,
+    undefined,
+    'no window control — it would render in one harness only'
+  );
+  console.log('PASS 3b — both harnesses get the same four positions, no window control');
+
+  // 4) The no-parameter position reaches the wire as NOTHING — it is the one
+  //    position no gateway can reject, and the panel's default.
   seen.length = 0;
   await ask('none');
-  assert.deepStrictEqual(seen, ['high'], `none was never tried, got ${JSON.stringify(seen)}`);
-  console.log('PASS 4 — enumerated-but-missing value skipped, sent:', seen[0]);
+  assert.deepStrictEqual(seen, [undefined], `none must send no reasoning_effort, got ${JSON.stringify(seen)}`);
+  console.log('PASS 4 — the no-parameter position sends nothing on the wire');
 
   // 5) A GENERIC error body (no field named) is still attributable: the probe
   //    differs by one parameter, so the conclusion holds without the body's

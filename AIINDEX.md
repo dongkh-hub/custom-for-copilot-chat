@@ -41,10 +41,10 @@
 | 文件 | 行 | 职责 | 关键导出 |
 | --- | --- | --- | --- |
 | `extension.ts` | 212 | 激活编排：建 store → 挂设置镜像 → 修宿主槽位 → 注册 provider → 跨窗口监听 → Agents 默认值 → 命令（4 个）→ 一次性提示 | `activate` / `deactivate` |
-| `provider.ts` | 1000 | Provider 实现：模型发现、请求主循环、400 阶梯、上下文溢出分支、齿轮面板 schema（思考强度 + 上下文窗口档位）、诊断日志（只写文件，无打开入口） | `registerModelProvider` `notifyProviderChanged` `setDiagnosticLogDir` |
-| `config.ts` | 517 | **形状与派生**：`Profile`、`parseProfile`、内置限额预设链、picker id 编解码、上下文窗口固定档位、思考强度档位、输出通道 | `MODEL_PROVIDER_VENDOR` `STATE_KEYS` `CONTEXT_WINDOW_TIERS` `detectModelPreset` `resolveProfileEntry` `contextTierOptions` `defaultContextTier` `realInputCeiling` `summaryInputTokens` `tokenWindowLabel` `hostWindowLabel` `summaryWindowLabel` `THINKING_EFFORTS` `resolveThinkingEffort` `thinkingEffortParam` `encodePickerId` `decodePickerId` `modelOutput` `readProfileApiKey` `writeProfileApiKey` |
+| `provider.ts` | 982 | Provider 实现：模型发现（含**双通道声明**：`configurationSchema` 给 VS Code picker，`supportsReasoningEffort`/`defaultReasoningEffort` 给 Copilot）、请求主循环、400 阶梯、上下文溢出分支、诊断日志（只写文件，无打开入口） | `registerModelProvider` `notifyProviderChanged` `setDiagnosticLogDir` |
+| `config.ts` | 483 | **形状与派生**：`Profile`、`parseProfile`、内置限额预设链、picker id 编解码、思考强度档位、输出通道 | `MODEL_PROVIDER_VENDOR` `STATE_KEYS` `detectModelPreset` `resolveProfileEntry` `realInputCeiling` `summaryInputTokens` `tokenWindowLabel` `summaryWindowLabel` `THINKING_EFFORTS` `DEFAULT_THINKING_EFFORT` `resolveThinkingEffort` `thinkingEffortParam` `encodePickerId` `decodePickerId` `modelOutput` `readProfileApiKey` `writeProfileApiKey` |
 | `profileStore.ts` | 262 | **唯一真相源**：模型组列表（SecretStorage `customModel.profiles.v2`）+ 同步缓存 + 跨窗口 reload + 限额覆写 | `initProfileStore` `readProfiles` `readProfile` `firstProfile` `writeProfiles` `upsertProfile` `removeProfile` `reloadProfiles` `applyProfileLimitOverrides` `onProfilesChanged` `resetProfileStoreForTests` |
-| `message.ts` | 671 | 请求体构造与消息映射：tool/图片拆分、思考回放、辅助请求降级、400 阶梯、结构指纹 | `buildRequestBody` `convertMessage` `applyCompatibilityFallback` `dropRejectedParams` `bodyDigest` `readThinkingEffortChoice` `readModelLimitOverrides` `applyLimitOverrides` `estimatePromptTokens` `safeJsonStringify` |
+| `message.ts` | 668 | 请求体构造与消息映射：tool/图片拆分、思考回放、辅助请求降级、400 阶梯、结构指纹 | `buildRequestBody` `convertMessage` `applyCompatibilityFallback` `dropRejectedParams` `bodyDigest` `readThinkingEffortChoice` `readModelLimitOverrides` `applyLimitOverrides` `estimatePromptTokens` `safeJsonStringify` |
 | `stream.ts` | 283 | SSE 解析、tool call 增量拼接、usage 数据部件、错误脱敏与映射 | `streamSseToProgress` `usageDataPart` `sanitizeDetail` `readErrorDetail` `responseErrorWithDetail` |
 | `replay.ts` | 162 | 思考回放标记（宿主不透明 data part）的写与读 | `REPLAY_MARKER_MIME` `createReasoningMarker` `readReasoningMarker` |
 | `requestKind.ts` | 215 | 「谁在问？」分类 + 辅助请求降级策略 | `classifyProviderRequest` `classifyRequestShape` `utilityDowngrade` `isUtilityKind` |
@@ -95,8 +95,8 @@ VS Code / Copilot Chat
 10. `await initProfileStore(context)` 必须排在**任何读 profile 之前**；SecretStorage 不可用时降级为**仅内存**（当前会话可用，不持久化，输出通道记一行 `[profiles] credential store unavailable`）。
 11. `getConfiguration(section)` 的 key 一律**段内相对**（`chat.*`、`github.copilot.chat.*`、`chat.agentHost.*`、`extensions.*`）；传全名会变成 `chat.chat.*`，`update()` 直接抛错。
 12. 宿主设置写入是 **fill-only**（只填空位）+ 只修自家命名空间的 stale 值；**没有任何代码路径会覆盖用户自己填的值**。
-13. 面板限额三态：`undefined` = 本次没动 · `>0` = 自定义（并持久化） · `<=0`（`Number('')===0`）= 清空，恢复自动。
-14. 思考强度齿轮：`auto`（默认）**不发送任何思考参数**；其余档位原样发 `reasoning_effort`。未知值回落到 `auto`。辅助请求（utility 降级命中）一律不带该参数。`reasoning_effort` 已在 `OPTIONAL_BODY_PARAMS` 里，被网关拒绝时 400 阶梯会自动摘掉。
+13. 限额覆写三态：`undefined` = 本次没动 · `>0` = 自定义（并持久化进模型组） · `<=0`（`Number('')===0`）= 清空，恢复自动。**窗口不再有 gear 控件**（见第 26 条），所以这三个值是「宿主把原始字段名下发」或「向导/manage 里手填」时才出现；`contextSize` 已从读取面移除，旧值不会再把模型改小。
+14. 思考档位**四个位置就是宿主能标注的那四个词**：`none` / `low` / `medium` / `high`。`none`（默认）**不发送任何思考参数**；其余原样发 `reasoning_effort`。未知值回落 `none`；退役 id `auto` 也映射到 `none`（老存储值不失效）。辅助请求（utility 降级命中）一律不带该参数。`reasoning_effort` 已在 `OPTIONAL_BODY_PARAMS` 里，被网关拒绝时 400 阶梯会自动摘掉。**id 不能随便命名**：Copilot 侧用固定表（`none/minimal/low/medium/high/xhigh/max`）逐项生成标签，表外的值被**直接丢弃** —— 曾用 `auto` 导致同一模型在一侧 5 档、另一侧 4 档。
 15. 辅助请求降级恒定生效：文本类 helper 去 `tools` + `max_tokens=2048`；`todo-tracker` / `prompt-categorizer` 保留唯一工具；`main-agent` / `terminal-steering` 绝不降级。
 16. preflight 每轮**只发一个** activator（宿主的分组互斥），最多 3 轮；合成 call id 前缀 `cm_preflight_activate_`，发真实请求前会被 `filterPreflightControlFlow` 摘掉。
 17. `l10n.t()` 的参数必须是**字符串字面量**；清单文案走 `%key%`，en/zh 两份都要有（缺键不会回退，会原样显示 `%key%`）。
@@ -108,11 +108,10 @@ VS Code / Copilot Chat
 23. gear 面板**不从 enum 里删除**被拒档位：VS Code 把选择存在自己的 per-model 存储里，抽掉 enum 成员会让面板显示空值。改为在 `enumDescriptions` 里标注「会改用 X」，请求路径提前替换，不再花那一趟往返。
 24. **「已配置」由 `noAuth` 或非空 Key 决定**（`profileHasCredentials`），不是只看 Key：自建推理服务（本地或内网、未开鉴权）没有密钥，若把空 Key 一律当未配置，这些端点永远加不进来。`noAuth` 只认字面量 `true`（手改 payload 写 `"true"` 不生效）；无鉴权请求**完全不发 Authorization 头**（空 `Bearer ` 会被把「头存在」当凭据的代理判 401）。
 25. base URL 只做**后缀归一**：去尾斜杠、把误粘的 `…/chat/completions` 折回 base。**不补 `/v1`、不改前缀** —— 各家根路径不同（`/v1`、`/v1/openai`、`/openai/v1`、带 deployment 的路径），猜错就是把可用的换成 404；而 404 不在重试阶梯里。
-26. **上下文窗口是一套固定档位**（`CONTEXT_WINDOW_TIERS` = 64K/128K/256K/512K/1M，**升序**，下拉按此顺序渲染），**所有模型同一套**，与模型自己的窗口无关：档位若从模型上限派生，选一次小档后大档就消失；若从当前生效值派生，就永远选不到比它更大的。预设只决定**起始档**（`defaultContextTier` = 不超过真实上限的最大档，容差 `TIER_FIT_SLACK` = 8K，容差是为了让 128000 落在 128K 而不是掉到 64K）。**手填值原样保留**（`profile.maxInputTokens > 0`），并由 `contextTierOptions` 插进 enum —— schema 的 `default` 必须是自己 enum 的成员，否则宿主下拉空白。低于 64K 的真实窗口也落在 64K：声明**偏小**只是更早压缩，声明**偏大**则会撞上下文溢出报错（见第 8 条）。
-    **下拉的 LABEL 不是档位值，而是宿主上下文环会显示的数字**：环分母 = `(contextSize ?? maxInputTokens) + maxOutputTokens`，且宿主用 **1000 进制、M 段截断一位**（`hostWindowLabel` 复刻其 `$E`）。所以 `contextTierOptions(current, maxOutputTokens)` 的第二个参数**必须传该条目的输出上限**，label = `hostWindowLabel(档位 + 输出上限)`；漏传会让「选 256K」在环上读作「262K」。曾用二进制 `tokenWindowLabel` 做 label，128K 输出上限下「选 256K → 环上 393K」，用户看到的数字在面板里根本不存在。**档位 VALUES 不要为了凑整齐去改**（本扩展每个 profile 的输出上限不同，反推只能得到非整数预算，还会污染管理器里 `输入/输出` 摘要）。
+26. **上下文窗口是声明，不是控件**：`maxInputTokens` = 模型真实窗口（`realInputCeiling`，预设值或 1M 默认），手填值优先；**没有 gear 下拉，也没有档位阶梯**（`CONTEXT_WINDOW_TIERS` / `contextTierOptions` / `defaultContextTier` / `hostWindowLabel` 已删）。原因是两个 harness 的渲染面不同：VS Code 自己的 picker 会画 `tokens` 组，Copilot 侧不画 —— 同一个模型于是在一个窗口里可调、在另一个窗口里莫名其妙被调小，且没人能改回来。要小窗口就让模型条目自己带小窗口（换一个 `maxInputTokens` 更小的 id / 在管理里手填上限），让「选模型」承担这个维度；Copilot 客户端本来就会在声明窗口的 ~80% 处自动压缩，压小只换来更早压缩。**旧安装注意**：以前在下拉里选过的档位被持久化进了模型组（`profile.maxInputTokens > 0`），升级后仍然生效，需要恢复就把它改回 0。
 27. **「添加模型」是唯一会结束管理器访问的动作**：`addModelProfile` / `modelWizard` 返回 `saved: boolean`，管理器（`manageModels` 的 `for(;;)` 与空列表分支）在 `true` 时 `return` —— 向导已把焦点交给 Copilot Chat，再弹回列表只会挡住用户正要打字的输入框。`false`（向导任意一步 Esc / 空必填 / 写盘失败）才 `continue` 回列表。更新 ID / 复制 / 删除**照旧回到列表**（那仍处于「我在管理」的意图里）。
 28. 焦点交回 Chat 要**两条命令**：`workbench.action.chat.open`（显示视图）+ `workbench.action.chat.focusInput`（把光标放进输入框，实测命令存在）。只有前者时焦点会停在视图容器或上次聚焦的编辑器里。两条都包 try/catch —— 版本没有该命令时静默失败，配置本身已成功。
-29. **摘要（设置镜像 / 管理列表 / 添加向导）显示「真实上限」而不是起始档**：`summaryInputTokens()` = 手填/选档值优先，否则 `realInputCeiling()`（preset 值，未经档位吸附）。档位是**预算**，把 200K 模型印成 128K 会被读成「它只能做这么多」。摘要侧的 `tokenWindowLabel`（**输出上限**，二进制：131072 → `128K`，≥1M → `1M`）与 `summaryWindowLabel`（输入上限，十进制厂商口径：200000 → `200K`）是两套，不要合并 —— 否则 200K 模型会被印成 `195K`，或 128K 档被印成 `131K`。**注意 `tokenWindowLabel` 已不再用于上下文窗口下拉**（那里用环上口径的 `hostWindowLabel`，见第 26 条）：这两个函数名字相近、口径不同，改摘要时别抓错。
+29. **摘要（设置镜像 / 管理列表 / 添加向导）显示的就是声明值**：`summaryInputTokens()` = 手填值优先，否则 `realInputCeiling()`；档位阶梯删掉后它与 `resolveProfileEntry().maxInputTokens` 恒等（保留独立函数名是为了表达「这个模型本身多大」）。两个标签函数口径不同、不要合并：`tokenWindowLabel`（二进制：131072 → `128K`）与 `summaryWindowLabel`（十进制厂商口径：200000 → `200K`），合并会把 200K 印成 `195K`。
 
 ## 6. 日志 stage 对照（`console.log` + `<globalStorage>/custom-for-copilot-chat.log`）
 
@@ -149,10 +148,10 @@ VS Code / Copilot Chat
 - **加清单文案**：`package.json` 写 `%key%` → 两份 `package.nls*.json` 各加一条（同名同占位符）。
 - **加命令**：`contributes.commands`（`title` 走 `%cmd.xxx.title%`）+ 两份 nls + `extension.ts` 里 `registerCommand` + 任何弹窗文案补 l10n。
 - **在设置项里放可点链接**：`markdownDescription` 写 `[文本](command:命令id)`（命令必须先注册）；这就是设置页「管理模型」统一入口的实现方式。链接文本里**不要写 `$(codicon)`** —— 设置 UI 不渲染图标，会原样显示成 `$(add)`（QuickPick 的 label 里则可以正常用）。
-- **加模型限额预设**：`config.ts` 的 `MODEL_PRESETS` 插入（**窄 id 必须排在同族通配之前**）→ `smoke.js` 补断言。README 不再列逐条限额表（预设是示例性质，随网关而异），只保留「默认 1M/128K + 齿轮面板可覆盖」的说法。
-- **改思考强度档位**：`config.ts` 的 `THINKING_EFFORTS` / `resolveThinkingEffort` / `thinkingEffortParam` + `provider.ts` 的 `thinkingEffortProperty`（`enumItemLabels` / `enumDescriptions` 与 `THINKING_EFFORTS` 必须同序）。
-- **改上下文窗口档位**：`config.ts` 的 `CONTEXT_WINDOW_TIERS`（加/删档即改这一个常量，`enumItemLabels` 由 `contextTierOptions` 自动同序）+ 需要时调 `defaultContextTier` 的容差 `TIER_FIT_SLACK`。**不要**把档位改成按模型派生 —— 见不变量第 26 条。**顺序即渲染顺序**：常量是升序，所以最小档是 `[0]`、`defaultContextTier` 取 `fitting` 的**最后一个**；改序必须同时改这两处索引。**改档位或改预设的输出上限后**，`smoke.js` 里 label 断言（按 `hostWindowLabel(档位 + 输出上限)` 校验）会跟着失败——那正是提醒你环上数字变了，按新值更新即可；`provider.ts` 调 `contextTierOptions` 时**必须**把 `entry.maxOutputTokens` 一起传进去。
-- **改面板字段**：`provider.modelConfigurationSchema`（枚举→下拉，`integer`→输入框）+ `message.readModelLimitOverrides` 读回。
+- **加模型限额预设**：`config.ts` 的 `MODEL_PRESETS` 插入（**窄 id 必须排在同族通配之前**）→ `smoke.js` 补断言。README 不再列逐条限额表（预设是示例性质，随网关而异），只保留「默认 1M/128K + 管理里可覆盖」的说法。
+- **改思考强度档位**：`config.ts` 的 `THINKING_EFFORTS` / `DEFAULT_THINKING_EFFORT` / `resolveThinkingEffort` / `thinkingEffortParam` + `provider.ts` 的 `thinkingEffortProperty`（`enumItemLabels` / `enumDescriptions` 与 `THINKING_EFFORTS` 必须同序）+ `modelInformation` 里的 `supportsReasoningEffort` / `defaultReasoningEffort`。**新档位 id 必须是 `none/minimal/low/medium/high/xhigh/max` 之一**，否则 Copilot 侧直接丢弃（见第 14 条）；改完跑 `npm run e2e`，PASS 3b 会核对两侧枚举一致。
+- **调模型窗口**：改 `MODEL_PRESETS` 的 `maxInputTokens`，或在管理里给该组手填上限（`profile.maxInputTokens`）。**不要**恢复 gear 下拉或档位阶梯 —— 两个 harness 只有一侧渲染 `tokens` 组，见第 26 条；`smoke.js` 里 `resolveProfileEntry(...).maxInputTokens` 断言现在盯的是「真实窗口不再被吸附」。
+- **改面板字段**：`provider.modelConfigurationSchema`（`navigation` 组 = 思考档位，枚举→下拉）+ `message.readThinkingEffortChoice` 读回；**新增字段必须同时在 `supportsReasoningEffort` 一侧声明**，否则只有 VS Code 自己那个窗口看得到它。
 - **打包安装**：`npm run verify` → `npm run package`（或 `./scripts/dev-install.sh`）→ **Reload Window**（VS Code 不热替换已安装扩展）。
 
 ## 9. 验证门槛

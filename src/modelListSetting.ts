@@ -67,7 +67,7 @@ export function modelListLines(
 ): string[] {
   return profiles.map((profile) => {
     const entry = resolveProfileEntry(profile);
-    // The REAL ceiling, not the rung the model starts on: this line is the
+    // The declared window IS the model's real ceiling now — this line is the
     // user's record of what the model can do.
     const limits = `${summaryWindowLabel(summaryInputTokens(profile))}/${tokenWindowLabel(entry.maxOutputTokens)}`;
     const head = profile.name ? `${profile.name} → ${profile.model}` : profile.model;

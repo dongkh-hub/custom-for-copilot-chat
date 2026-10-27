@@ -90,8 +90,8 @@ function isUsableBaseURL(baseURL: string): boolean {
  */
 function entryLimitsLabel(profile: Profile): string {
   const entry = resolveProfileEntry(profile);
-  // The real ceiling, not the starting rung — a preset label like
-  // "Beta V4 (1M/128K)" describes what the model can do.
+  // The model's real ceiling — a preset label like "Beta V4 (1M/128K)"
+  // describes what the model can do.
   const limits = `${summaryWindowLabel(summaryInputTokens(profile))}/${tokenWindowLabel(entry.maxOutputTokens)}`;
   return entry.presetLabel ?? vscode.l10n.t('default {0}', limits);
 }

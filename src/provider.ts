@@ -44,9 +44,9 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import {
+  DEFAULT_THINKING_EFFORT,
   MODEL_PROVIDER_VENDOR,
   THINKING_EFFORTS,
-  contextTierOptions,
   decodePickerId,
   encodePickerId,
   modelOutput,
@@ -156,97 +156,68 @@ function modelInformation(
     // a first-party model.
     isBYOK: true,
     isUserSelectable: true,
-    // DECLARED limits — the entry's real window: Copilot Chat sizes the
+    // DECLARED limits — the model's real window: Copilot Chat sizes the
     // conversation history against maxInputTokens, and the output ceiling is
-    // reserved for the answer. A window rung picked in the gear panel lands
-    // here as an override (see `readModelLimitOverrides` + the persist path),
-    // so the declaration and the panel's `default` stay in step.
+    // reserved for the answer. Both harnesses read this one number and neither
+    // offers a control for it, so the two windows can never disagree about how
+    // big this model is (see config.ts).
     maxInputTokens: entry.maxInputTokens,
     maxOutputTokens: entry.maxOutputTokens,
     capabilities: {
       imageInput: true,
       toolCalling: true,
     },
-    // The gear panel: thinking-effort dropdown + context-window dropdown, one
-    // per host group. Unknown fields are ignored by hosts that do not know
+    // The gear panel. The schema below is what VS CODE's own picker renders;
+    // Copilot's harness ignores it and rebuilds the dropdown from these two
+    // top-level fields instead. Declaring the SAME four positions twice — with
+    // ids the Copilot side can label — is what makes both windows show one
+    // identical dropdown. Unknown fields are ignored by hosts that do not know
     // them.
     configurationSchema: modelConfigurationSchema(entry, profile),
+    supportsReasoningEffort: [...THINKING_EFFORTS],
+    defaultReasoningEffort: DEFAULT_THINKING_EFFORT,
   } as unknown as vscode.LanguageModelChatInformation;
 }
 
 /**
- * The per-model configuration schema the picker renders (the gear panel).
+ * The per-model configuration schema VS Code's own picker renders (the gear
+ * panel): ONE control, `reasoningEffort` (group `navigation`).
  *
- * ONE CONTROL PER GROUP — that is how many the host draws: `navigation` and
- * `tokens` are the only two groups it knows, and within a group it takes the
- * FIRST property it recognises and ignores the rest. So the split is:
+ * This schema is for the ordinary window ONLY. Copilot's harness does not read
+ * it at all — it builds its own dropdown from `supportsReasoningEffort` /
+ * `defaultReasoningEffort` (see modelInformation) — which is why the positions
+ * are declared twice and why their ids must be words that harness can label
+ * (see THINKING_EFFORTS in config.ts).
  *
- *   - `reasoningEffort` → `navigation` (the thinking-effort dropdown);
- *   - `contextSize` → `tokens` (the context-window dropdown).
+ * There is deliberately NO window control: a `tokens`-group property was
+ * rendered by VS Code's picker and silently dropped by Copilot's, so the same
+ * model was adjustable in one window and frozen in the other. The window is a
+ * declaration (`maxInputTokens`), not a choice.
  *
- * Both are non-public contracts. The values come back request-scoped through
- * `options.modelOptions` / `modelConfiguration` / `configuration` (see
- * message.ts). The window is a NUMBER on purpose: the host folds
- * `contextSize ?? maxInputTokens` into its own window math, which is what the
- * context-usage ring and Copilot Chat's compaction threshold are computed
- * from — a `contextTier` label would only change text.
- *
- * The output ceiling is deliberately absent: the `tokens` slot is taken by the
- * window, and there is no third group to put it in.
+ * The output ceiling is absent for the same reason: the host offers no group
+ * for it.
  */
 function modelConfigurationSchema(entry: ModelEntry, profile: Profile): unknown {
   return {
     properties: {
       reasoningEffort: thinkingEffortProperty(profile, entry.id),
-      contextSize: contextWindowProperty(entry),
     },
-  };
-}
-
-/**
- * The `contextSize` dropdown: the prompt budget this model is sized against.
- *
- * One FIXED ladder for every model (64K → 1M, ascending) — see
- * `CONTEXT_WINDOW_TIERS`, which is also the order the dropdown is rendered in.
- * The model's own window only decides which rung it starts on
- * (`defaultContextTier`), never which rungs exist: a ladder derived from the
- * model collapsed on the first pick, and one derived from the effective value
- * could never offer anything above it.
- *
- * LABELS state the window Copilot will REPORT, not the rung: the host's ring
- * denominator is `contextSize + maxOutputTokens` printed in base 1000, so the
- * rung is passed together with this entry's output ceiling and
- * `contextTierOptions` labels each rung with that total. Without it the user
- * picked「256K」and saw「393K」on the ring, with the chosen number nowhere on
- * screen (this extension's ceilings differ per profile, unlike a single-model
- * provider's, so the labels — not the rung values — are what get derived).
- *
- * `default` is the CURRENTLY effective ceiling (see resolveProfileEntry), so
- * "nothing stored" reads as "the declared window" — the host deletes a stored
- * value that equals the default, and an absent value must never mean zero.
- */
-function contextWindowProperty(entry: ModelEntry): unknown {
-  const tiers = contextTierOptions(entry.maxInputTokens, entry.maxOutputTokens);
-  return {
-    type: 'integer',
-    title: vscode.l10n.t('Context window'),
-    description: vscode.l10n.t(
-      'The window Copilot reports on the context ring — prompt budget plus the answer reserve. Smaller choices make it compact the history earlier; the model itself is unchanged.'
-    ),
-    enum: tiers.map((tier) => tier.tokens),
-    enumItemLabels: tiers.map((tier) => tier.label),
-    default: entry.maxInputTokens,
-    group: 'tokens',
   };
 }
 
 /**
  * The `reasoningEffort` dropdown.
  *
- * `auto` leads and is the default: this provider talks to ANY
+ * `none` leads and is the default: this provider talks to ANY
  * OpenAI-compatible endpoint, and there is no single spelling for "how hard
  * to think" across them, so the neutral position is the one that puts nothing
  * on the wire. Everything else rides out as `reasoning_effort` verbatim.
+ *
+ * The title and the labels are deliberately the ones Copilot's harness uses
+ * for the same four positions (it builds its own dropdown from
+ * `supportsReasoningEffort` and labels the entries itself): the two windows
+ * then read the same list, and `enumItemLabels` only adds the localisation
+ * that VS Code's picker needs.
  *
  * Positions this endpoint has already REFUSED (see modelCapability.ts) stay in
  * the list — VS Code keeps the chosen value in its own per-model storage, and
@@ -257,14 +228,14 @@ function contextWindowProperty(entry: ModelEntry): unknown {
 function thinkingEffortProperty(profile: Profile, model: string): unknown {
   return {
     type: 'string',
-    title: vscode.l10n.t('Thinking effort'),
+    title: vscode.l10n.t('Effort level'),
     description: vscode.l10n.t(
-      'How hard this model should think. "Auto" sends no reasoning parameter at all; the other positions go out as reasoning_effort.'
+      'How hard this model should think. "None" sends no reasoning parameter at all; the other positions go out as reasoning_effort.'
     ),
     enum: [...THINKING_EFFORTS],
     enumItemLabels: THINKING_EFFORTS.map((effort) => effortLabel(effort)),
     enumDescriptions: THINKING_EFFORTS.map((effort) => learnedEffortDescription(profile, model, effort)),
-    default: 'auto',
+    default: DEFAULT_THINKING_EFFORT,
     group: 'navigation',
   };
 }
@@ -289,11 +260,15 @@ function learnedEffortDescription(profile: Profile, model: string, effort: strin
       );
 }
 
-/** One dropdown label. */
+/**
+ * One dropdown label. The wording matches what Copilot's harness prints for the
+ * same id, so the two windows read identically; a value it does not know is
+ * shown as-is rather than hidden (the enum is fixed, so this is unreachable).
+ */
 function effortLabel(effort: string): string {
   switch (effort) {
     case 'none':
-      return vscode.l10n.t('Off');
+      return vscode.l10n.t('None');
     case 'low':
       return vscode.l10n.t('Low');
     case 'medium':
@@ -301,7 +276,7 @@ function effortLabel(effort: string): string {
     case 'high':
       return vscode.l10n.t('High');
     default:
-      return vscode.l10n.t('Auto');
+      return effort;
   }
 }
 
@@ -309,7 +284,7 @@ function effortLabel(effort: string): string {
 function effortDescription(effort: string): string {
   switch (effort) {
     case 'none':
-      return vscode.l10n.t('Ask for no reasoning — reasoning_effort: "none"');
+      return vscode.l10n.t('Send nothing — the gateway decides');
     case 'low':
       return vscode.l10n.t('Lightest reasoning — fastest, fewest tokens');
     case 'medium':
@@ -317,7 +292,7 @@ function effortDescription(effort: string): string {
     case 'high':
       return vscode.l10n.t('Deepest reasoning — slowest, most tokens');
     default:
-      return vscode.l10n.t('Send nothing — the gateway decides');
+      return effort;
   }
 }
 
@@ -352,7 +327,7 @@ async function resolveCredentials(
  * What to send instead of a gear position this endpoint already refused.
  *
  * `undefined` means "nothing learned, send what the panel says". A learned
- * refusal resolves to `high`, then `low`, then `auto` — `auto` drops the
+ * refusal resolves to `high`, then `low`, then `none` — `none` drops the
  * parameter entirely, which is the only position no gateway can reject.
  */
 function learnedEffortFor(
@@ -363,7 +338,7 @@ function learnedEffortFor(
   if (effortVerdict(baseURL, model, requested) !== 'rejected') {
     return undefined;
   }
-  return fallbackEffort(baseURL, model) ?? 'auto';
+  return fallbackEffort(baseURL, model) ?? 'none';
 }
 
 /**
@@ -483,19 +458,18 @@ export function registerModelProvider(context: vscode.ExtensionContext): vscode.
       }
 
       const requestNotes: string[] = [];
-      // What the gear panel sent for THIS model rides along on the request: the
-      // context-window rung (a smaller budget than the declaration) and any
-      // hand-set token limits (>0 = custom value, 0 = cleared — restore the
-      // default). Applied to this request immediately, and persisted into the
-      // group (shared credential store) so the picker, other windows and other
-      // VS Code profiles follow.
+      // A hand-set token limit rides along on the request (>0 = custom value,
+      // 0 = cleared — restore the default). Applied to this request
+      // immediately, and persisted into the group (shared credential store) so
+      // the picker, other windows and other VS Code profiles follow. There is
+      // no gear control for the window any more — this is the profile setting.
       const limitOverrides = readModelLimitOverrides(options);
       if (limitOverrides.maxInputTokens !== undefined || limitOverrides.maxOutputTokens !== undefined) {
         void persistLimitOverride(profile.key, limitOverrides);
       }
       const effectiveEntry = applyLimitOverrides(entry, limitOverrides);
-      // The thinking-effort gear the user picked in the model's configuration
-      // panel (absent on older hosts → `auto`, which sends nothing).
+      // The effort position picked in the model's configuration panel (absent on
+      // an older host → `none`, which sends nothing).
       const requestedEffort = resolveThinkingEffort(readThinkingEffortChoice(options));
       // ...then the LEARNED override. A value this endpoint already answered
       // 400 to is replaced by a safe one BEFORE the request goes out: the
@@ -573,7 +547,7 @@ export function registerModelProvider(context: vscode.ExtensionContext): vscode.
               logRejected(rid, response.status, body, detail);
               throw new vscode.LanguageModelError(
                 vscode.l10n.t(
-                  'The gateway rejected this request as too long (conversation exceeds the model window). Pick a smaller "Context window" in the model\'s gear panel, or start a new chat. Gateway said: {0}',
+                  'The gateway rejected this request as too long (conversation exceeds the model window). Start a new chat, or lower the model\'s input limit in "Manage Models…". Gateway said: {0}',
                   sanitizeDetail(detail) || `HTTP ${response.status}`
                 )
               );

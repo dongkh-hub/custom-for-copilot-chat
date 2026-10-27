@@ -7,8 +7,8 @@
  * Code profile on this machine sees the same groups. This module owns what a
  * group IS ({ key, name, baseURL, model, noAuth?, maxInputTokens,
  * maxOutputTokens }) and everything derived from it: the official preset
- * chain, the picker id encoding, the context-window rungs and the
- * thinking-effort gear. API keys stay in SecretStorage too, under
+ * chain, the picker id encoding and the thinking-effort gear. API keys stay in
+ * SecretStorage too, under
  * `customModel.apiKey.<profileKey>`. The request path reads the list and the
  * key PER REQUEST — a swap takes effect on the next chat message with no
  * reload.
@@ -19,16 +19,18 @@
  *     > the preset detected from the model id (official vendor figures)
  *     > the 1M/128K mainstream default
  *
- * ...and the INPUT side has one extra step: unless it was hand-set, the
- * resolved window snaps DOWN onto the fixed context ladder
- * ({@link CONTEXT_WINDOW_TIERS}), so the declared budget is always a rung the
- * gear panel can show as its own default. The ladder is the same for every
- * model — the preset only decides WHICH rung a model starts on
- * ({@link defaultContextTier}).
- *
  * `0` (the default) means "auto": the preset chain rules. Everything else
  * this extension does (helper-request downgrade, tool-list stabilization,
  * thinking passthrough) is fixed behavior — there are no hidden switches.
+ *
+ * The window is a DECLARATION, not a control. There used to be a second gear
+ * dropdown that capped `maxInputTokens` onto a fixed ladder; it was removed
+ * because only ONE of the two harnesses renders it (VS Code's own picker draws
+ * the `tokens` group, Copilot's does not), which made the same model adjustable
+ * in one window and silently fixed in the other. Copilot compacts on its own at
+ * ~80% of the declared window, so capping bought earlier compaction and nothing
+ * else. To run a model on a smaller window, set the limit on the profile (or
+ * add a second profile whose model id maps to that window).
  *
  * The preset REGEXES recognize the ids of mainstream models so their limits
  * apply automatically; the preset ids/labels stay neutral (alpha/beta/gamma)
@@ -36,7 +38,7 @@
  * is NO universal input:output ratio — each model caps output per id, and
  * reasoning models keep their own (larger) output budget because reasoning
  * tokens count toward it. When a gateway serves ids no preset recognizes,
- * the mainstream default applies and the gear panel can pin real numbers.
+ * the mainstream default applies and the profile's limits can pin real numbers.
  */
 import * as vscode from 'vscode';
 
@@ -63,8 +65,9 @@ export const DEFAULT_MAX_OUTPUT_TOKENS = 131072;
 export interface ModelLimits {
   /**
    * Declared prompt budget the HOST sizes the conversation history against.
-   * Always a rung of {@link CONTEXT_WINDOW_TIERS} unless the user set one by
-   * hand (the gear panel writes its pick back into the profile verbatim).
+   * The model's real window (preset figure or mainstream default) unless the
+   * profile pins a number — there is no gear control for it any more (see the
+   * module docblock).
    */
   readonly maxInputTokens: number;
   /** Declared output ceiling reserved for the answer. */
@@ -156,7 +159,7 @@ export function detectModelPreset(id: string): ModelPreset | undefined {
 
 /**
  * The model's REAL input ceiling: the preset figure, or the mainstream
- * default — taken BEFORE the ladder snaps it onto a rung.
+ * default. This is what the entry declares.
  */
 export function realInputCeiling(model: string): number {
   return detectModelPreset(model)?.maxInputTokens ?? DEFAULT_MAX_INPUT_TOKENS;
@@ -166,9 +169,9 @@ export function realInputCeiling(model: string): number {
  * The input figure the SUMMARY lines show (settings mirror, manager list):
  * the model's real ceiling until the user overrides it, then their number.
  *
- * Deliberately NOT the resolved value: a rung is a BUDGET, so printing `128K`
- * for a 200K model would read as "that is all it can do". The rung is what
- * the gear panel STARTS that model on, not its window.
+ * Identical to the resolved value now that the ladder is gone — kept as a
+ * separate name so the summary keeps its own meaning ("what this model is"),
+ * independent of what the declaration happens to be.
  */
 export function summaryInputTokens(profile: Pick<Profile, 'model' | 'maxInputTokens'>): number {
   return profile.maxInputTokens > 0 ? profile.maxInputTokens : realInputCeiling(profile.model);
@@ -331,14 +334,11 @@ export function resolveProfileEntry(profile: Profile): ModelEntry {
   const preset = detectModelPreset(profile.model);
   return {
     id: profile.model,
-    // A hand-set value (a rung picked in the gear panel, or a hand-typed
-    // number) is kept verbatim; the preset's real window otherwise snaps DOWN
-    // onto the ladder, so the declared window is always a rung the gear panel
-    // can show as its own `default`.
+    // A hand-set value is kept verbatim; otherwise the model's real window is
+    // declared as-is. Both harnesses read this one number, and neither offers a
+    // control for it (see the module docblock for why).
     maxInputTokens:
-      profile.maxInputTokens > 0
-        ? profile.maxInputTokens
-        : defaultContextTier(realInputCeiling(profile.model)),
+      profile.maxInputTokens > 0 ? profile.maxInputTokens : realInputCeiling(profile.model),
     maxOutputTokens:
       profile.maxOutputTokens > 0
         ? profile.maxOutputTokens
@@ -381,9 +381,7 @@ export async function writeProfileApiKey(
  * 1048576 → `1M`. The M step matters — "1024K" is not what anyone picks a
  * window by, and the summary lines that print an output ceiling use this.
  *
- * NOT the context-window dropdown's label any more: that one has to match the
- * number the host prints on the context ring, which is a base-1000 total (see
- * {@link hostWindowLabel} and {@link contextTierOptions}).
+ * Binary on purpose: the figures this labels ARE binary (65536 is 64K).
  */
 export function tokenWindowLabel(tokens: number): string {
   return tokens >= 1048576 ? `${Math.round(tokens / 1048576)}M` : `${Math.round(tokens / 1024)}K`;
@@ -395,117 +393,13 @@ export function tokenWindowLabel(tokens: number): string {
  *
  * Not {@link tokenWindowLabel}: preset ceilings are quoted in decimal (a
  * 200K window), and dividing them by 1024 prints 195K — a number that
- * matches nothing the user has read anywhere. Rungs stay on the binary
- * label because 131072 IS 128K.
+ * matches nothing the user has read anywhere.
  */
 export function summaryWindowLabel(tokens: number): string {
   return tokens >= 1000000 ? `${Math.round(tokens / 1000000)}M` : `${Math.round(tokens / 1000)}K`;
 }
 
-/**
- * The label VS CODE ITSELF would print for a token count — a replica of the
- * workbench's abbreviation helper (`$E` in `workbench.desktop.main.js`), which
- * is BASE 1000 and truncates in the M range:
- *
- *   393216 → `393K` · 1179648 → `1.1M` · 1048576 → `1M` · 1025536 → `1M`
- *   (the M range truncates to one decimal, so 1.048 collapses to `1M`, and
- *   anything over 900_000 that is not yet 1M also reads `1M`)
- *
- * This exists because the gear panel's context-window dropdown and the chat's
- * context ring are the two places a user compares numbers, and only this
- * labelling makes them agree. The ring's denominator is NOT the rung: the host
- * computes `(contextSize ?? maxInputTokens) + maxOutputTokens` — the prompt
- * budget PLUS the answer reserve — and prints it through the formatter above.
- * A rung labelled `256K` (binary, 262144) under a 128K output ceiling therefore
- * showed「393K」on the ring, i.e. the number the user picked was nowhere on
- * screen. See `contextTierOptions`, which labels every rung with THIS figure.
- */
-export function hostWindowLabel(tokens: number): string {
-  if (tokens >= 1000000) {
-    const millions = Math.floor((tokens / 1000000) * 10) / 10;
-    return millions % 1 === 0 ? `${millions.toFixed(0)}M` : `${millions.toFixed(1)}M`;
-  }
-  if (tokens > 900000) {
-    return '1M';
-  }
-  return tokens >= 1000 ? `${Math.round(tokens / 1000)}K` : String(tokens);
-}
 
-/**
- * The context-window ladder: ONE fixed set of rungs for EVERY model, ASCENDING
- * (64K up to 1M) — this is the order the gear panel renders them in.
- *
- * The rungs are deliberately NOT derived from the model. A ladder derived
- * from the ceiling collapsed on the first pick — choose 512K of 1M and the
- * 1M rung disappeared — and one derived from the currently effective value
- * could never offer anything above it. A fixed ladder has neither problem,
- * and it is the same ladder everywhere, so what the user learns once applies
- * to every model they add later.
- *
- * 64K is the floor: the host spends part of the budget on the answer, and a
- * vendor's round figure (128000) is not the whole window, so the smallest
- * rung has to leave room under a 128K model.
- *
- * Everything that reads this array must stay order-agnostic: the ladder is
- * ASCENDING, so the smallest rung is `[0]` and the fitting rung of
- * `defaultContextTier` is the LAST one, not the first.
- */
-export const CONTEXT_WINDOW_TIERS: readonly number[] = [
-  65536, 131072, 262144, 524288, 1048576,
-];
-
-/**
- * How far a rung may exceed a real ceiling and still count as fitting (8K).
- * Preset figures are round decimal — 128000 for a 128K window, 1047576 for a
- * 1M one — and without the slack those would snap a whole rung down over a
- * few KB of rounding.
- */
-const TIER_FIT_SLACK = 8192;
-
-/**
- * The rungs offered for ONE model: the fixed ladder, plus the model's
- * currently effective value when that is not already a rung.
- *
- * The extra member is what keeps a HAND-TYPED window reachable: the schema's
- * `default` is the effective value, and a default that is not a member of its
- * own enum leaves the host with an empty dropdown. It is slotted in by VALUE
- * (the ladder is ascending), not appended — a hand-set 700K between two rungs
- * must not read as "bigger than 1M".
- *
- * LABELS are the number the context ring will show, not the rung itself: the
- * host sizes the ring from `budget + maxOutputTokens` and abbreviates in base
- * 1000 (see {@link hostWindowLabel}). Printing the raw rung made「选 256K」
- * read「393K」on the ring for a 128K-output model, so `maxOutputTokens` is
- * required input here — pass the SAME output ceiling the entry declares.
- * Omit it only where no ring is involved (there is no such caller today).
- */
-export function contextTierOptions(
-  current?: number,
-  maxOutputTokens = 0
-): readonly { tokens: number; label: string }[] {
-  const tokens = CONTEXT_WINDOW_TIERS.filter((tier) => tier !== current);
-  if (current !== undefined && current > 0) {
-    tokens.push(current);
-    tokens.sort((left, right) => left - right);
-  }
-  return tokens.map((value) => ({
-    tokens: value,
-    label: hostWindowLabel(value + maxOutputTokens),
-  }));
-}
-
-/**
- * The rung a model STARTS on: the largest rung that does not exceed its real
- * window. A model below the smallest rung still gets the smallest one —
- * declaring a budget UNDER the real window only costs context (the host
- * compacts earlier), while one over it costs a failed request.
- */
-export function defaultContextTier(realCeiling: number): number {
-  const fitting = CONTEXT_WINDOW_TIERS.filter((tier) => tier <= realCeiling + TIER_FIT_SLACK);
-  // The ladder is ascending, so the largest fitting rung is the LAST one and
-  // the floor is the FIRST one.
-  return fitting[fitting.length - 1] ?? CONTEXT_WINDOW_TIERS[0];
-}
 
 // --- Fixed behavior (no settings — behavior lives in code, not options) ---------
 
@@ -528,24 +422,51 @@ export const THINKING_DISABLE_STYLE: ThinkingDisableStyle = 'none';
 
 /**
  * One position of the THINKING-EFFORT gear — the dropdown the model picker
- * renders from `configurationSchema` (the same non-public contract the
- * official Auto selector and the built-in reasoning-effort dropdown ride on).
+ * renders in its configuration panel.
  *
- * `auto` is the default and sends NOTHING. An arbitrary OpenAI-compatible
- * gateway has no single spelling for "how hard to think" — or even for "do
- * not think" (see {@link THINKING_DISABLE_STYLE}) — so the safe default is to
- * let the gateway's own rule stand. Every other value goes out verbatim as
+ * TWO harnesses read this dropdown, and they do NOT read it the same way:
+ *
+ *   - VS Code's own picker renders `configurationSchema` (group `navigation`);
+ *   - Copilot's harness ignores that schema and builds its own dropdown from
+ *     the TOP-LEVEL `supportsReasoningEffort` / `defaultReasoningEffort`
+ *     fields — and it labels every entry through a FIXED table
+ *     (`none / minimal / low / medium / high / xhigh / max`). A value outside
+ *     that table is DROPPED silently, which is how this extension ended up
+ *     showing five positions in one window and four in the other.
+ *
+ * So the ids ARE the host's words, and both windows then show the same list.
+ * `none` is the position that sends NOTHING: an arbitrary OpenAI-compatible
+ * gateway has no single spelling for "how hard to think" — or even for "do not
+ * think" (see {@link THINKING_DISABLE_STYLE}) — so the safe default is to let
+ * the gateway's own rule stand. `low` / `medium` / `high` go out verbatim as
  * `reasoning_effort`, and a gateway that rejects the parameter has it removed
  * by the 400 ladder (`reasoning_effort` is already one of the optional body
  * params) instead of failing the request.
+ *
+ * Localised wording lives in the panel's `enumItemLabels` (which only VS Code's
+ * picker reads) — NEVER in the id, because the id is what Copilot filters on.
+ *
+ * Deliberate trade-off: `reasoning_effort: "none"` is no longer ever sent. One
+ * of the four visible positions had to carry "send nothing" (the host has no
+ * word for it), and putting it on `none` is the only mapping where the label
+ * still tells the truth. A gateway that needs the literal value to stop
+ * thinking is better served by `low`.
  */
-export type ThinkingEffort = 'auto' | 'none' | 'low' | 'medium' | 'high';
+export type ThinkingEffort = 'none' | 'low' | 'medium' | 'high';
 
 /** Gear positions in dropdown order — the default first. */
-export const THINKING_EFFORTS: readonly ThinkingEffort[] = ['auto', 'none', 'low', 'medium', 'high'];
+export const THINKING_EFFORTS: readonly ThinkingEffort[] = ['none', 'low', 'medium', 'high'];
 
 /** Position applied when the host sends no (or an unknown) choice. */
-export const DEFAULT_THINKING_EFFORT: ThinkingEffort = 'auto';
+export const DEFAULT_THINKING_EFFORT: ThinkingEffort = 'none';
+
+/**
+ * The RETIRED id of the no-parameter position: builds before the rungs were
+ * named after the host's words offered `auto`. VS Code keeps the value it
+ * stored, so `auto` has to keep meaning "send nothing" rather than degrading
+ * to whatever the default happens to be.
+ */
+const RETIRED_NO_PARAM_EFFORT = 'auto';
 
 /**
  * Narrow a gear value: an unknown id (a stale stored value, an older host)
@@ -553,10 +474,16 @@ export const DEFAULT_THINKING_EFFORT: ThinkingEffort = 'auto';
  */
 export function resolveThinkingEffort(value: string | undefined): ThinkingEffort {
   const normalized = value?.trim().toLowerCase();
+  if (normalized === RETIRED_NO_PARAM_EFFORT) {
+    return 'none';
+  }
   return THINKING_EFFORTS.find((effort) => effort === normalized) ?? DEFAULT_THINKING_EFFORT;
 }
 
-/** The `reasoning_effort` value for the wire, or `undefined` for `auto`. */
+/**
+ * The `reasoning_effort` value for the wire, or `undefined` for the position
+ * that asks for nothing.
+ */
 export function thinkingEffortParam(effort: ThinkingEffort): string | undefined {
-  return effort === 'auto' ? undefined : effort;
+  return effort === 'none' ? undefined : effort;
 }

@@ -24,7 +24,7 @@ Model groups are stored in the **user-level credential store** (not `settings.js
 
 - **Model doesn't appear in the picker**: make sure Copilot Chat is enabled.
 - **Gateway returns 400**: the extension falls back automatically through a four-level ladder; see the Output panel (Output → "Custom for Copilot Chat").
-- **"Request too long"**: lower "Max input tokens" in the gear menu next to the model, or start a new session.
+- **"Request too long"**: start a new session, or lower that model's input limit in "Manage Models…".
 - **Post-hoc debugging**: request logs are persisted to `custom-for-copilot-chat.log` in the extension's global storage (macOS: `~/Library/Application Support/Code/User/globalStorage/CustomforCopilotChat.custom-for-copilot-chat/`).
 
 ## Development

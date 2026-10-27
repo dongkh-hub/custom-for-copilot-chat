@@ -88,11 +88,12 @@ function configuredNumber(
  * The limit overrides the model's configuration panel sent for THIS request,
  * read back through the same three request-scoped sources as the gear choice.
  *
- * Two spellings mean the same thing for the input budget:
- *   - `contextSize` — the context-window dropdown (host group `tokens`);
- *   - `maxInputTokens` — a host handing the raw field name down.
- * They collapse into ONE field (`maxInputTokens`) so the store never holds two
- * disagreeing numbers; the dropdown wins when both arrive.
+ * The panel declares no window control any more (see config.ts — only one of
+ * the two harnesses renders a `tokens` group, so the same model was adjustable
+ * in one window and fixed in the other). These two fields are still read
+ * because a host may hand the RAW limit names down; `contextSize` is
+ * deliberately gone, so a value stored by an older build can no longer resize
+ * a model that has no control for it.
  *
  * Per field: `undefined` = the panel did not send it this request ·
  * `> 0` = a custom value to apply (and persist) · `<= 0` = cleared — restore
@@ -107,10 +108,6 @@ export function readModelLimitOverrides(
     if (numeric !== undefined) {
       overrides[field] = numeric;
     }
-  }
-  const window = configuredNumber(options, 'contextSize');
-  if (window !== undefined) {
-    overrides.maxInputTokens = window;
   }
   return overrides;
 }
@@ -147,8 +144,9 @@ export function applyLimitOverrides<T extends { maxInputTokens: number; maxOutpu
  * for "do not think" — see THINKING_DISABLE_STYLE in config.ts).
  *
  * The thinking-effort gear (the model picker's per-model dropdown) rides out
- * as `reasoning_effort` — `auto` sends nothing at all. Helper requests never
- * carry it: a chat title must not spend the user's key on chain-of-thought.
+ * as `reasoning_effort` — the `none` position sends nothing at all. Helper
+ * requests never carry it: a chat title must not spend the user's key on
+ * chain-of-thought.
  *
  * Any parameter this function changes for compatibility reasons is described
  * in `notes`, so the request log shows WHY a payload differs from the plain
@@ -209,11 +207,11 @@ export function buildRequestBody(
   if (policy?.maxOutputTokens !== undefined) {
     body.max_tokens = policy.maxOutputTokens;
   }
-  // The gear-panel choice (see readThinkingEffortChoice) — `auto` sends
-  // nothing, every other value is passed through verbatim. Helper requests are
-  // skipped: a title generator has no use for chain-of-thought, and
-  // `reasoning_effort` on a bounded-`max_tokens` helper would spend the whole
-  // budget on reasoning before the answer.
+  // The gear-panel choice (see readThinkingEffortChoice) — the `none` position
+  // sends nothing, every other value is passed through verbatim. Helper
+  // requests are skipped: a title generator has no use for chain-of-thought,
+  // and `reasoning_effort` on a bounded-`max_tokens` helper would spend the
+  // whole budget on reasoning before the answer.
   const effortParam = policy?.disableThinking ? undefined : thinkingEffortParam(effort);
   if (effortParam) {
     body.reasoning_effort = effortParam;

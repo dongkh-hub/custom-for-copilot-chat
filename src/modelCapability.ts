@@ -156,11 +156,12 @@ function recordKey(baseURL: string, model: string): string {
 }
 
 /**
- * What is known about ONE gear position. `auto` is always "supported" because
- * it puts nothing on the wire — there is nothing a gateway could reject.
+ * What is known about ONE gear position. The position that asks for nothing
+ * (`none`, and the retired `auto` spelling of it) is always "supported" — it
+ * puts nothing on the wire, so there is nothing a gateway could reject.
  */
 export function effortVerdict(baseURL: string, model: string, effort: string): EffortVerdict {
-  if (effort === 'auto') {
+  if (effort === 'none' || effort === 'auto') {
     return 'supported';
   }
   const record = cache.models[recordKey(baseURL, model)];
@@ -207,8 +208,8 @@ export async function recordEffortVerdict(
   detail?: string
 ): Promise<boolean> {
   const value = effort.trim().toLowerCase();
-  if (!KNOWN_EFFORTS.has(value) || value === 'auto') {
-    return false; // not a gear position — nothing to learn
+  if (!KNOWN_EFFORTS.has(value) || value === 'none' || value === 'auto') {
+    return false; // nothing goes on the wire for that position — nothing to learn
   }
   const key = recordKey(baseURL, model);
   const record: ModelRecord = cache.models[key] ?? {

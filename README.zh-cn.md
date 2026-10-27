@@ -24,7 +24,7 @@
 
 - **模型没出现在选择器**：确认 Copilot Chat 已启用。
 - **网关报 400**：扩展会按四级阶梯自动降级重试，详细过程可见输出通道（输出 → 「Custom for Copilot Chat」）。
-- **提示「请求超长」**：在模型旁的齿轮里调小「最大输入 tokens」，或新开会话。
+- **提示「请求超长」**：新开会话，或在「管理模型…」里调低该模型的输入上限。
 - **事后排查**：请求日志落盘在扩展全局存储 `custom-for-copilot-chat.log`（macOS：`~/Library/Application Support/Code/User/globalStorage/CustomforCopilotChat.custom-for-copilot-chat/`）。
 
 ## 开发
